@@ -2,8 +2,6 @@ import streamlit as st
 import pickle
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 # Define available models and their metrics
 Model_of_Regression = {
@@ -20,6 +18,13 @@ Model_of_Classifier = {
     'RandomForestClassifierModel.pkl': 0.91
 }
 
+# Define classification labels (numeric -> text)
+classification_labels = {
+    0: "Group A",
+    1: "Group B",
+    2: "Group C"
+}
+
 # Define feature sets
 Regression_features = ['gender', 'race_ethnicity', 'parental_level_of_education', 'math_score',
                        'reading_score', 'writing_score', 'total_score']
@@ -28,18 +33,8 @@ Classification_features = ['gender', 'parental_level_of_education', 'math_score'
                            'reading_score', 'writing_score', 'total_score', 'average_score']
 
 # App title and description
-st.title("Advanced Prediction App")
+st.title("Advanced Prediction and Model Comparison App")
 st.sidebar.header("Options and Settings")
-
-# Sidebar - User Guide
-with st.sidebar.expander("User Guide"):
-    st.write("""
-    - **Step 1**: Select the type of model (Regression or Classification).
-    - **Step 2**: Choose a model from the dropdown menu.
-    - **Step 3**: Provide inputs manually or upload a CSV file for bulk predictions.
-    - **Step 4**: View predictions and model performance metrics.
-    - **Step 5**: Use visualization options for better insights.
-    """)
 
 # Sidebar - Select Model Type
 model_type = st.sidebar.radio("Select Model Type:", ("Regression", "Classification"))
@@ -57,24 +52,36 @@ else:
 # Display Model Accuracy
 st.sidebar.metric(label="Model Accuracy", value=f"{model_accuracy * 100:.2f}%", help="The accuracy of the selected model.")
 
-# Function to dynamically create input fields with tooltips
+# Compare Models Button
+if st.sidebar.button("Compare Models"):
+    st.subheader("Model Comparison")
+
+    if model_type == "Regression":
+        models = Model_of_Regression
+    else:
+        models = Model_of_Classifier
+
+    # Create a DataFrame for model comparison
+    comparison_data = pd.DataFrame({
+        'Model': list(models.keys()),
+        'Accuracy (%)': [accuracy * 100 for accuracy in models.values()]
+    })
+
+    # Display the comparison table
+    st.write("Model Performance Comparison:")
+    st.dataframe(comparison_data)
+
+    # Visualize the comparison
+    st.bar_chart(comparison_data.set_index('Model'))
+
+# Function to dynamically create input fields
 def get_inputs(feature_list):
     inputs = {}
-    tooltips = {
-        'gender': "Gender of the individual (e.g., male, female).",
-        'race_ethnicity': "Race/ethnicity group of the individual.",
-        'parental_level_of_education': "Highest education level of the individual's parents.",
-        'math_score': "Score in mathematics (numeric).",
-        'reading_score': "Score in reading (numeric).",
-        'writing_score': "Score in writing (numeric).",
-        'total_score': "Total score (numeric, sum of math, reading, and writing).",
-        'average_score': "Average score across all subjects (numeric)."
-    }
     for feature in feature_list:
         if feature in ['math_score', 'reading_score', 'writing_score', 'total_score', 'average_score']:
-            val = st.number_input(f"{feature}:", min_value=0.0, step=0.01, help=tooltips.get(feature))
+            val = st.number_input(f"{feature}:", min_value=0.0, step=0.01)
         else:
-            val = st.text_input(f"{feature}:", help=tooltips.get(feature))
+            val = st.text_input(f"{feature}:")
         inputs[feature] = val
     return inputs
 
@@ -112,20 +119,32 @@ if st.button("Predict"):
         if uploaded_file:
             input_array = input_data.values
             predictions = model.predict(input_array)
+
+            if model_type == "Classification":
+                # Convert numeric predictions to text labels
+                predictions = [classification_labels.get(int(pred), "Unknown") for pred in predictions]
+
             st.write("Predictions:")
             st.dataframe(predictions)
 
             # Visualization: Class Distribution or Predictions
-            st.subheader("Visualization")
+            st.subheader("Histogram Visualization")
             if model_type == "Classification":
-                sns.countplot(x=predictions)
-                plt.title("Class Distribution")
-                st.pyplot(plt)
+                # Count occurrences for each class
+                unique, counts = np.unique(predictions, return_counts=True)
+                histogram_data = pd.DataFrame({
+                    "Class": unique,
+                    "Count": counts
+                })
+                st.bar_chart(histogram_data.set_index("Class"))
             else:
-                plt.figure(figsize=(10, 5))
-                plt.plot(range(len(predictions)), predictions, marker='o')
-                plt.title("Predictions Visualization")
-                st.pyplot(plt)
+                # Generate histogram for regression predictions
+                hist, bins = np.histogram(predictions, bins=10)
+                histogram_data = pd.DataFrame({
+                    "Bins": bins[:-1],
+                    "Frequency": hist
+                })
+                st.bar_chart(histogram_data.set_index("Bins"))
         else:
             input_array = np.array([[float(user_inputs[feature]) if feature in ['math_score', 'reading_score', 'writing_score', 'total_score', 'average_score']
                                      else 0 for feature in features]])
@@ -133,17 +152,8 @@ if st.button("Predict"):
             if model_type == "Regression":
                 st.success(f"The Prediction is: {prediction[0]:.2f}")
             else:
-                st.success(f"The Predicted Class is: {int(prediction[0])}")
+                # Convert numeric prediction to text label
+                predicted_label = classification_labels.get(int(prediction[0]), "Unknown")
+                st.success(f"The Predicted Class is: {predicted_label}")
     except Exception as e:
         st.error(f"Prediction failed: {e}")
-
-# Model Comparison
-st.sidebar.subheader("Compare Models")
-if st.sidebar.button("Compare All Models"):
-    st.subheader("Model Comparison")
-    comparison_data = pd.DataFrame({
-        'Model': list(Model_of_Regression.keys() if model_type == "Regression" else Model_of_Classifier.keys()),
-        'Accuracy (%)': [val * 100 for val in (Model_of_Regression.values() if model_type == "Regression" else Model_of_Classifier.values())]
-    })
-    st.dataframe(comparison_data)
-    st.bar_chart(comparison_data.set_index('Model'))
